@@ -240,6 +240,11 @@ def get_monitoring_info(ldap_connection):
             logger.info('Skipping %s due to ignore' % dn)
             continue
 
+        if hosts[dc]['fqdn'].endswith('.pmtpa.wmflabs'):
+            del(hosts[dc])
+            logger.info('Skipping %s due to pmtpa murdering' % dn)
+            continue
+
         # Sort out our groups
         host_groups = get_host_groups(instance, puppet_vars)
         for group in host_groups:
