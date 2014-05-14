@@ -405,6 +405,9 @@ if __name__ == "__main__":
     if options.config_dir:
         nagios_config_dir = options.config_dir
 
+    if options.ignored_path:
+        ignored_path = options.ignored_path
+
     if (not os.path.isdir(nagios_config_dir)
             and not os.makedirs(nagios_config_dir)):
         logger.error('Could not create config dir')
