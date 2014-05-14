@@ -1,0 +1,121 @@
+dns manager
+	- tinydns export
+	- bind export
+
+tickets
+	- email2ticket
+
+time tracking
+	- linked to service
+	- for contract stuff
+
+service tracking
+	- for services customers have
+
+customers
+	- ronsil
+
+contacts
+	- admin/tech/etc contacts for customers
+
+products
+	- consultancy time, hosting etc
+
+solutions
+	- linked to customers
+
+documentation
+	- linked to solutions
+	- markdown2pdf with details swapped post markdown conversion
+	- stored in git on the backend
+
+auth_details
+	- linked to solutions/customers
+
+configuration
+	- auto updated (for network etc)
+	- read only (for chef/puppet etc)
+	- stored in git on the backend
+	- linked to solutions
+	- multiple repos per solution
+
+---
+Simple diff view of things
+
+
+                   tickets
+                   `      `
+Products <> Solutions <> Customers
+    |           |            |   auth details
+    |           |            |
+   time ------  |            |    | billing  
+                |            |    |  |
+                |           - --------
+                |        contacts    dns
+                |
+                |  auth details
+                |   |
+               - ---------
+ documentation           configurations
+   |         |             |        |
+ proposal   network      network    cfg mgmt
+
+
+---
+Customer A:
+
+Products:
+Hosting
+	Web (php/mysql) (bigv)
+
+Consulting time
+	Solution design
+	Solution implementation
+
+Solutions:
+	Managed auth stuff:
+		- Self service portal
+
+	Backups:
+		- Self service portal
+		- Repos/graphs and shizzle
+		- etc
+
+	Office A
+		Documentation:
+			- Proposal (SOW)
+				- Requirements
+			- Solution
+				- Network/Voice
+				- Server
+			- Change requests: (more documentation)
+				- blah blah blah (ticket xxxx)
+
+			- Meeting notes: (more documentation)
+				- blah blah blah
+
+		Configurations:
+			- Network devices
+			- Configuration Management
+			- Misc
+
+		Monitoring:
+			- Probes
+			- Service
+				- Availability Reports
+				- Graphs and shizzle
+
+		Auth details:
+			- user:
+				- blah blah
+				- change time
+				- notes
+				- etc
+
+		Managed Devices:
+			- switch a
+				- type xxxxxx
+				- model xxxxxx
+				- auth details
+				- graphs and shizzle
+				- link though to monitoring
