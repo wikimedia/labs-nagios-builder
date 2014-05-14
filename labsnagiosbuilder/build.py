@@ -221,6 +221,10 @@ def get_monitoring_info(ldap_connection):
             logger.debug('Skipping %s, not an instance' % dn)
             continue
 
+        if 'aRecord' not in instance.keys():
+            logger.debug('Skipping %s, no ip' % dn)
+            continue
+
         # If an instance doesn't have an ip it's probably building
         ips = []
         for ip in instance['aRecord']:
