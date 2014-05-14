@@ -13,7 +13,7 @@ How to set this up?
 * Clone the git repo (over http) out onto the server, we keep it in /root/
 * Setup a crontab with the following (/etc/crontab)
 
-	*/5 * * * * root cd /root/nagios-builder/labsnagiosbuilder/ && (git reset --hard; git pull origin master; ./build.py --ignored-hosts=/root/nagios-builder/wmflabs-ignored.host >> /var/log/nagios.log 2>&1)
+	*/5 * * * * root cd /root/nagios-builder/labsnagiosbuilder/ && (git reset --hard; git pull origin master; ./build.py --ignored-hosts=/root/nagios-builder/labsnagiosbuilder/wmflabs-ignored.host >> /var/log/nagios.log 2>&1)
 
 * This will cause the repo to be reset, updated and then the build script run every 5min
 * All reloading etc of icinga will happen based on changes
