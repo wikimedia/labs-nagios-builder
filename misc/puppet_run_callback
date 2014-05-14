@@ -1,0 +1,212 @@
+#!/usr/bin/env python
+'''
+Nagios puppet notifier for wmflabs.
+
+Author: Damian Zaremba <damian@damianzaremba.co.uk>
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+'''
+# Import modules we need
+import sys
+import os
+import time
+import ldap
+import logging, logging.handlers
+from optparse import OptionParser
+
+# How much to spam
+logging_level = logging.INFO
+
+# LDAP details
+ldap_config_file = "/etc/ldap.conf"
+ldap_base_dn = "dc=wikimedia,dc=org"
+ldap_filter = '(objectClass=dcobject)'
+ldap_attrs = ['puppetVar', 'puppetClass', 'dc', 'aRecord', 'associatedDomain']
+
+# Setup logging, everyone likes logging
+formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
+stdout_handler = logging.StreamHandler(sys.stdout)
+stdout_handler.setFormatter(formatter)
+syslog_handler = logging.handlers.SysLogHandler(address = '/dev/log')
+logger = logging.getLogger(__name__)
+logger.setLevel(logging_level)
+logger.addHandler(stdout_handler)
+logger.addHandler(syslog_handler)
+
+
+def get_ldap_config():
+    '''
+    Simple function to load the ldap config into a dict
+    '''
+    ldap_config = {}
+    with open(ldap_config_file, 'r') as fh:
+        for line in fh.readlines():
+            line_parts = line.split(' ', 1)
+
+            if len(line_parts) == 2:
+                ldap_config[line_parts[0].strip()] = line_parts[1].strip()
+
+    return ldap_config
+
+
+def ldap_connect():
+    '''
+    Simple function to connect to ldap
+    '''
+    ldap_config = get_ldap_config()
+    if 'uri' not in ldap_config:
+        logger.error('Could get URI from ldap config')
+        return False
+
+    if 'binddn' not in ldap_config or 'bindpw' not in ldap_config:
+        logger.error('Could get bind details from ldap config')
+        return False
+
+    ldap_connection = ldap.initialize(ldap_config['uri'])
+    ldap_connection.start_tls_s()
+
+    try:
+        ldap_connection.simple_bind_s(ldap_config['binddn'],
+                                      ldap_config['bindpw'])
+    except ldap.LDAPError:
+        logger.error('Could not bind to LDAP')
+    else:
+        logger.debug('Connected to ldap')
+        return ldap_connection
+
+
+def ldap_disconnect(ldap_connection):
+    '''
+    Simple function to disconnect from ldap
+    '''
+    try:
+        ldap_connection.unbind_s()
+    except ldap.LDAPError:
+        logger.error('Could not cleanly disconnect from LDAP')
+    else:
+        logger.debug('Disconnected from ldap')
+
+
+def get_puppet_vars(instance):
+    '''
+    Function to determine what puppet vars an instance has
+    '''
+    logger.debug('Processing puppet vars for %s' % instance['dc'][0])
+    vars = {}
+    if 'puppetVar' in instance.keys():
+        for var in instance['puppetVar']:
+            (k, v) = var.split('=', 1)
+            vars[k] = v
+
+    return vars
+
+
+def get_hosts():
+    '''
+    Simple function to get minimal host attributes
+    '''
+    hosts = {}
+
+    logger.debug('Searching ldap for hosts')
+    results = ldap_connection.search_s(ldap_base_dn, ldap.SCOPE_SUBTREE,
+                                       ldap_filter, ldap_attrs)
+    if not results:
+        logger.error('Could not get the list of hosts from ldap')
+
+    for (dn, instance) in results:
+        logger.debug('Processing info for %s' % dn)
+
+        # Get puppet vars
+        puppet_vars = get_puppet_vars(instance)
+
+        # Get the dc - don't rely on this for anything other than
+        # being unique (used for file names etc)
+        dc = instance['dc'][0]
+
+        # We only care about instances
+        if 'instancename' not in puppet_vars:
+            logger.debug('Skipping %s, not an instance' % dn)
+            continue
+
+        if 'aRecord' not in instance.keys():
+            logger.debug('Skipping %s, no ip' % dn)
+            continue
+
+        # If an instance doesn't have an ip it's probably building
+        ips = []
+        for ip in instance['aRecord']:
+            if len(ip.strip()) > 0:
+                ips.append(ip)
+
+        if len(ips) == 0:
+            logger.debug('Skipping %s, no ips' % dn)
+            continue
+
+        # Sort out the host info
+        hosts[dc] = {
+            'fqdn': instance['dc'][0],
+            'ips': ips,
+        }
+
+        # Fix the fqdn if required
+        for domain in instance['associatedDomain']:
+            if domain.startswith(puppet_vars['instancename']):
+                hosts[dc]['fqdn'] = domain
+    return hosts
+
+
+def notify_icinga(hostname):
+    service = 'Puppet freshness'
+    date = time.strftime('%a %b %d %H:%M:%S %Y')
+
+    message = "[%d] PROCESS_SERVICE_CHECK_RESULT;%s;%s;0;puppet ran at %s\n" % (int(time.time()),
+                                                                                hostname,
+                                                                                service,
+                                                                                date)
+    logger.info('Submitting %s' % message)
+    try:
+        fh = open('/var/lib/icinga/rw/icinga.cmd', 'w')
+        fh.write(message)
+        fh.close()
+    except Exception, e:
+        logger.error('Could not submit message: %s' % str(e))
+
+if __name__ == "__main__":
+    parser = OptionParser()
+    parser.add_option('-d', '--debug', action='store_true', dest='debug')
+    parser.add_option('--ip', dest='ip_address')
+
+    (options, args) = parser.parse_args()
+    if options.debug:
+        logger.setLevel(logging.DEBUG)
+        debug_mode = True
+
+    if not options.ip_address:
+        logger.error('No IP specified')
+        sys.exit(1)
+
+    # Connect
+    ldap_connection = ldap_connect()
+    if ldap_connection:
+        # Get all hosts (can't do a search on aRecord :()
+        hosts = get_hosts()
+        for host in hosts:
+            logger.debug('Looking for %s in %s' % (options.ip_address, ','.join(hosts[host]['ips'])))
+            if options.ip_address in hosts[host]['ips']:
+                # Write the status message
+                notify_icinga(hosts[host]['fqdn'])
+                break
+
+        # Cleanup
+        ldap_disconnect(ldap_connection)
+        sys.exit(0)
+
+    sys.exit(2)
